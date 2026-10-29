@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>기상 충격 대시보드</title>
+<style>
+  :root { --bg:#fbfaf7; --card:#fff; --line:#e6e3dc; --ink:#1d1c1a; --sub:#6b6860; --blue:#2b79d8; --orange:#ec6a36; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif; line-height:1.5; }
+  main { max-width:1080px; margin:0 auto; padding:28px 16px 56px; }
+  h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:17px; margin:0 0 4px; }
+  p.lead { margin:0 0 22px; color:var(--sub); font-size:14px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; margin-bottom:22px; }
+  .sub { color:var(--sub); font-size:13px; margin:0 0 14px; }
+  .grid { display:grid; grid-template-columns:260px 1fr; gap:22px; }
+  @media (max-width:760px) { .grid { grid-template-columns:1fr; } }
+  label { display:block; font-size:13px; font-weight:600; margin:12px 0 4px; }
+  select { width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:9px; font:inherit; background:#fff; }
+  input[type=range] { width:100%; }
+  .val { font-size:26px; font-weight:700; }
+  .notice { border-radius:10px; padding:12px 14px; margin-bottom:12px; font-size:14px; }
+  .lv0 { background:#eef5fd; color:#1d4f8f; } .lv1 { background:#fff1dc; color:#9a4a00; } .lv2 { background:#fde6df; color:#a3340f; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; margin-bottom:14px; }
+  .card { border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .card .k { font-size:12px; color:var(--sub); } .card .v { font-size:24px; font-weight:700; } .card .n { font-size:12px; color:var(--sub); }
+  .bars { display:flex; align-items:flex-end; gap:8px; height:190px; margin-top:6px; }
+  .bar { flex:1; text-align:center; font-size:11px; color:var(--sub); }
+  .bar i { display:block; margin:0 auto 4px; width:100%; border-radius:4px 4px 0 0; background:#c8dbf5; }
+  .bar.on i { background:var(--orange); } .bar b { display:block; color:var(--ink); font-size:12px; }
+  .tabs button { border:1px solid var(--line); background:#fff; padding:7px 16px; border-radius:20px; margin:0 6px 8px 0; cursor:pointer; font:inherit; font-size:14px; }
+  .tabs button.on { background:#1d1c1a; color:#fff; border-color:#1d1c1a; }
+  .checks label { display:inline-flex; align-items:center; gap:6px; margin:0 14px 8px 0; font-weight:400; }
+  .dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+  .chartwrap { position:relative; } canvas { width:100%; height:330px; display:block; }
+  #tip { position:absolute; pointer-events:none; background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:13px; box-shadow:0 4px 16px rgba(0,0,0,.1); display:none; min-width:200px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; margin-top:14px; }
+  th, td { text-align:right; padding:8px 6px; border-bottom:1px solid var(--line); } th:first-child, td:first-child { text-align:left; } th { color:var(--sub); font-weight:600; background:#faf9f6; }
+  .foot { font-size:12px; color:var(--sub); margin-top:8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>기상 충격 대시보드</h1>
+  <p class="lead">2023.1~2026.9 내국인 일별 입도객과 기상(순간풍속·강수·적설) 자료로 만든 분석 결과를 조건을 바꿔가며 볼 수 있습니다.</p>
+
+  <section>
+    <h2>① 예보로 급감 위험 미리 보기</h2>
+    <p class="sub">값을 바꾸면 결과가 바로 바뀝니다. 과거 관측에서 같은 풍속 구간의 충격일 비율을 계산한 값이며, 예측이 아니라 과거 빈도입니다.</p>
+    <div class="grid">
+      <div>
+        <label for="m">월</label><select id="m"></select>
+        <label for="d">요일</label><select id="d"></select>
+        <label for="g">예보 최대 순간풍속 <span class="val" id="gv" style="font-size:18px;float:right"></span></label>
+        <input id="g" type="range" min="0" max="28" step="0.5" value="19">
+        <div class="foot">기상청 강풍주의보 기준: 순간풍속 20m/s 초과</div>
+        <label style="font-weight:400"><input id="sn" type="checkbox"> 눈이 쌓일 것으로 예보됨</label>
+      </div>
+      <div>
+        <div id="notice" class="notice"></div>
+        <div class="cards" id="calc"></div>
+        <div class="sub" style="margin:0">풍속 구간별 충격일 확률(과거 관측) · 진한 막대 = 지금 입력한 구간</div>
+        <div class="bars" id="bars"></div>
+        <div class="foot" id="basis"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>② 과거 기상 충격 탐색</h2>
+    <p class="sub">기간을 고르고 점에 마우스를 올리면 그날의 입도객과 날씨가 보입니다.</p>
+    <div class="tabs" id="tabs"></div>
+    <div class="checks" id="checks"></div>
+    <div class="cards" id="sum"></div>
+    <div class="chartwrap"><canvas id="cv"></canvas><div id="tip"></div></div>
+    <table id="tbl"></table>
+    <div class="foot">편차율 = 실제 입도객 ÷ 평소 기대치(요일 보정 31일 이동중앙값) − 1. 회색 띠는 ±2σ(정상 범위). 원인은 날씨 기준 → 연휴 여파 → 3월 개학기 순으로 분류하며 해당이 없으면 '원인 미확인'입니다.</div>
+  </section>
+</main>
+<script src="data.js"></script>
+<script>
+const D = window.DATA, N = D.dates.length;
+const CN = ['', '기상: 특보 기준 이상', '기상: 순간풍속 18m/s+·적설', '연휴·명절 여파', '3월 개학기', '원인 미확인'];
+const CC = ['', '#2b79d8', '#1aa06d', '#ec6a36', '#e377a3', '#4b35a8'];
+const DOW = ['월','화','수','목','금','토','일'];
+const EDGE = [0,10,13,16,18,20,23,99], LAB = ['~10','10~13','13~16','16~18','18~20','20~23','23~'];
+const fmt = x => Math.round(x).toLocaleString('ko-KR');
+const binOf = g => { for (let i = 0; i < 7; i++) if (g < EDGE[i+1]) return i; return 6; };
+
+// ---------- 풍속 구간별 확률표 (연휴 여파 기간 제외)
+const cnt = Array(7).fill(0), shk = Array(7).fill(0), sevSum = Array(7).fill(0), sevN = Array(7).fill(0);
+let snowN = 0, snowShk = 0;
+for (let i = 0; i < N; i++) {
+  if (D.in_after[i]) continue;
+  const b = binOf(D.gust2[i]); cnt[b]++;
+  if (D.shock[i]) { shk[b]++; sevSum[b] += -D.dev[i] / 100; sevN[b]++; }
+  if (D.snow[i] > 0) { snowN++; if (D.shock[i]) snowShk++; }
+}
+const prob = cnt.map((c, i) => c ? shk[i] / c : 0);
+let hiSev = 0, hiN = 0; for (let b = 4; b < 7; b++) { hiSev += sevSum[b]; hiN += sevN[b]; }
+const sev = sevSum.map((s, i) => sevN[i] >= 3 ? s / sevN[i] : (hiN ? hiSev / hiN : 0.2));
+for (let b = 5; b < 7; b++) sev[b] = Math.max(sev[b], sev[b - 1]);  // 풍속이 높을수록 감소 폭이 작아지지 않게 보정(표본이 적은 구간)
+const lowShk = [0,1,2,3].reduce((a, b) => a + shk[b], 0), lowCnt = [0,1,2,3].reduce((a, b) => a + cnt[b], 0);
+const baseProb = lowShk / lowCnt;
+const snowProb = snowN ? snowShk / snowN : 0;
+
+// ---------- 계산기
+const mSel = document.getElementById('m'), dSel = document.getElementById('d'), g = document.getElementById('g'), sn = document.getElementById('sn');
+for (let i = 1; i <= 12; i++) mSel.add(new Option(i + '월', i));
+DOW.forEach((n, i) => dSel.add(new Option(n + '요일', i)));
+mSel.value = 1; dSel.value = 4;
+function expectedFor(m, d) {
+  let s = 0, c = 0;
+  for (let i = 0; i < N; i++) if (D.month[i] === m && D.dow[i] === d && !D.in_after[i]) { s += D.expected[i]; c++; }
+  return c ? s / c : 0;
+}
+function calc() {
+  const m = +mSel.value, d = +dSel.value, gv = +g.value, b = binOf(gv);
+  document.getElementById('gv').textContent = gv.toFixed(1) + ' m/s';
+  let p = prob[b]; if (sn.checked) p = Math.max(p, snowProb);
+  const base = expectedFor(m, d), loss = sev[b] * base;
+  const lv = gv > 20 ? 2 : gv >= 18 || sn.checked ? 1 : 0;
+  const nt = document.getElementById('notice');
+  nt.className = 'notice lv' + lv;
+  nt.innerHTML = lv === 0 ? '<b>평상 단계</b><br>이 풍속대에서는 평소 수준의 변동이 대부분입니다.'
+    : lv === 1 ? '<b>주의 단계 (특보 기준 미만이지만 위험 급증)</b><br>공식 특보 기준에는 못 미치지만, 과거 이 구간부터 급감 확률이 크게 높아졌습니다.'
+    : '<b>경계 단계 (특보 기준 초과)</b><br>강풍주의보 기준을 넘는 풍속입니다. 과거 이 구간에서 급감이 흔했습니다.';
+  document.getElementById('calc').innerHTML =
+    `<div class="card"><div class="k">입도객 급감 확률</div><div class="v">${(p*100).toFixed(0)}%</div><div class="n">평상시(18m/s 미만) 약 ${(baseProb*100).toFixed(0)}%</div></div>
+     <div class="card"><div class="k">평균 예상 감소</div><div class="v">${fmt(p*loss)}명</div><div class="n">평소 약 ${fmt(base)}명 기준</div></div>
+     <div class="card"><div class="k">급감이 일어나면</div><div class="v">${fmt(loss)}명</div><div class="n">평소 대비 약 −${(sev[b]*100).toFixed(0)}%</div></div>`;
+  document.getElementById('bars').innerHTML = prob.map((q, i) =>
+    `<div class="bar ${i === b ? 'on' : ''}"><b>${(q*100).toFixed(0)}%</b><i style="height:${Math.max(3, q * 140)}px"></i>${LAB[i]}<br>n=${cnt[i]}</div>`).join('');
+  document.getElementById('basis').textContent = `근거: 연휴 여파 기간을 뺀 ${cnt.reduce((a,b)=>a+b,0)}일의 관측 · 풍속은 당일·전날 중 큰 값 · ${m}월 ${DOW[d]}요일 평소 기대치 적용${b === 6 ? ' · 23m/s 이상은 표본이 적어 참고용' : ''}`;
+}
+[mSel, dSel, g, sn].forEach(e => e.addEventListener('input', calc)); calc();
+
+// ---------- 탐색기
+let year = 'all'; const on = {1:true,2:true,3:true,4:true,5:true};
+const tabs = document.getElementById('tabs'), checks = document.getElementById('checks');
+['all','2023','2024','2025','2026'].forEach(y => { const b = document.createElement('button'); b.textContent = y === 'all' ? '전체 기간' : y + '년'; b.onclick = () => { year = y; draw(); }; b.dataset.y = y; tabs.appendChild(b); });
+for (let c = 1; c <= 5; c++) { const l = document.createElement('label'); l.innerHTML = `<input type="checkbox" checked data-c="${c}"><span class="dot" style="background:${CC[c]}"></span>${CN[c]}`; l.firstChild.onchange = e => { on[c] = e.target.checked; draw(); }; checks.appendChild(l); }
+const cv = document.getElementById('cv'), tip = document.getElementById('tip'); let view = [], geo = null;
+function draw() {
+  tabs.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.y === year));
+  view = []; for (let i = 0; i < N; i++) if (year === 'all' || D.dates[i].startsWith(year)) view.push(i);
+  const shown = view.filter(i => D.shock[i] && on[D.cause[i]]);
+  const wx = shown.filter(i => D.cause[i] <= 2);
+  document.getElementById('sum').innerHTML =
+    `<div class="card"><div class="k">급감일 (평소 대비 −2σ 이하)</div><div class="v">${view.filter(i => D.shock[i]).length}일</div></div>
+     <div class="card"><div class="k">그중 기상 원인</div><div class="v">${view.filter(i => D.shock[i] && D.cause[i] <= 2).length}일</div></div>
+     <div class="card"><div class="k">기상으로 줄어든 관광객</div><div class="v">${fmt(view.filter(i => D.shock[i] && D.cause[i] <= 2).reduce((a, i) => a + D.expected[i] - D.visitors[i], 0))}명</div><div class="n">기대치 − 실제, 기상 원인 급감일 합</div></div>`;
+  const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight; cv.width = W * dpr; cv.height = H * dpr;
+  const x = cv.getContext('2d'); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, H);
+  const L = 44, R = 10, T = 10, B = 26, yMin = -100, yMax = 50;
+  const px = k => L + (view.length > 1 ? k / (view.length - 1) : 0) * (W - L - R), py = v => T + (yMax - v) / (yMax - yMin) * (H - T - B);
+  geo = { px, py, L, R, W };
+  x.fillStyle = '#efede9'; x.fillRect(L, py(2 * D.sigma), W - L - R, py(-2 * D.sigma) - py(2 * D.sigma));
+  x.strokeStyle = '#eee'; x.fillStyle = '#6b6860'; x.font = '11px sans-serif'; x.textAlign = 'right';
+  for (let v = -100; v <= 50; v += 25) { x.beginPath(); x.moveTo(L, py(v)); x.lineTo(W - R, py(v)); x.stroke(); x.fillText(v + '%', L - 6, py(v) + 4); }
+  x.textAlign = 'center'; let last = '';
+  view.forEach((i, k) => { const ym = D.dates[i].slice(0, 7); if (ym !== last && (year !== 'all' || ym.endsWith('-01') || ym.endsWith('-07'))) { x.fillText(year === 'all' ? ym : ym.slice(5) + '월', px(k), H - 8); } last = ym; });
+  x.strokeStyle = '#a7a59b'; x.lineWidth = 1; x.beginPath(); view.forEach((i, k) => k ? x.lineTo(px(k), py(Math.max(yMin, D.dev[i]))) : x.moveTo(px(k), py(Math.max(yMin, D.dev[i])))); x.stroke();
+  shown.forEach(i => { const k = view.indexOf(i); x.fillStyle = CC[D.cause[i]]; x.strokeStyle = '#fff'; x.beginPath(); x.arc(px(k), py(Math.max(yMin, D.dev[i])), 4, 0, 7); x.fill(); x.stroke(); });
+  const top = shown.slice().sort((a, b) => D.dev[a] - D.dev[b]).slice(0, 8);
+  document.getElementById('tbl').innerHTML = '<tr><th>날짜</th><th>입도객 / 기대치</th><th>편차율</th><th>순간풍속</th><th>강수</th><th>적설</th><th>분류</th></tr>' +
+    top.map(i => `<tr><td>${D.dates[i]} (${DOW[D.dow[i]]})</td><td>${fmt(D.visitors[i])} / ${fmt(D.expected[i])}</td><td>${D.dev[i].toFixed(0)}%</td><td>${D.gust[i]} m/s</td><td>${D.precip[i]} mm</td><td>${D.snow[i] ? D.snow[i] + ' cm' : '-'}</td><td><span class="dot" style="background:${CC[D.cause[i]]}"></span> ${CN[D.cause[i]]}</td></tr>`).join('');
+}
+cv.addEventListener('mousemove', e => {
+  if (!geo || !view.length) return;
+  const r = cv.getBoundingClientRect(), mx = e.clientX - r.left;
+  const k = Math.max(0, Math.min(view.length - 1, Math.round((mx - geo.L) / (geo.W - geo.L - geo.R) * (view.length - 1)))), i = view[k];
+  tip.style.display = 'block'; tip.style.left = Math.min(mx + 14, r.width - 230) + 'px'; tip.style.top = '12px';
+  tip.innerHTML = `<b>${D.dates[i]} (${DOW[D.dow[i]]})</b><br>입도객 ${fmt(D.visitors[i])}명 · 기대치 ${fmt(D.expected[i])}명<br>편차율 ${D.dev[i].toFixed(1)}%<br>순간풍속 ${D.gust[i]}m/s · 강수 ${D.precip[i]}mm · 적설 ${D.snow[i]}cm` +
+    (D.shock[i] ? `<br><span class="dot" style="background:${CC[D.cause[i]]}"></span> <b>${CN[D.cause[i]]}</b>` : '');
+});
+cv.addEventListener('mouseleave', () => tip.style.display = 'none');
+window.addEventListener('resize', draw); draw();
+</script>
+</body>
+</html>
